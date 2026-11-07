@@ -15,6 +15,9 @@ DEPENSES_DIR = DATA_DIR / "depenses"
 RESOLUTIONS_DIR = DATA_DIR / "resolutions"
 TRAVAUX_DIR = DATA_DIR / "travaux"
 
+# Une liste de fichiers ne passe sur deux colonnes qu'au-delà de ce nombre.
+MAX_FILES_ONE_COLUMN = 5
+
 # st.pdf s'ouvre toujours à 100 % et n'a pas d'option de zoom initial : ce script
 # clique sur son bouton « + » (25 % par clic) pour agrandir chaque PDF ouvert
 # autant que possible, jusqu'à 175 %, tant que les pages tiennent dans le lecteur.
@@ -117,8 +120,13 @@ def show_document(path: Path) -> None:
         st.info("Aperçu indisponible pour ce type de fichier.")
 
 
-def render_documents(directory: Path, key: str) -> None:
-    """Liste les fichiers d'un dossier : un clic affiche le fichier en dessous."""
+def render_documents(directory: Path, key: str, columns: int = 2) -> None:
+    """Liste les fichiers d'un dossier : un clic affiche le fichier en dessous.
+
+    Au-delà de ``MAX_FILES_ONE_COLUMN`` fichiers, la liste est répartie sur
+    ``columns`` colonnes (deux par défaut), remplies l'une après l'autre pour
+    garder l'ordre alphabétique de haut en bas.
+    """
     documents = list_documents(directory)
     if not documents:
         st.info(
@@ -128,8 +136,13 @@ def render_documents(directory: Path, key: str) -> None:
         return
 
     selected_key = f"selected_{key}"
-    for name in documents:
-        with st.container(horizontal=True, vertical_alignment="center"):
+    if len(documents) <= MAX_FILES_ONE_COLUMN:
+        columns = 1
+    per_column = -(-len(documents) // columns)  # division arrondie au supérieur
+    cols = st.columns(columns) if columns > 1 else [st.container()]
+    for index, name in enumerate(documents):
+        column = cols[index // per_column]
+        with column, st.container(horizontal=True, vertical_alignment="center"):
             if st.button(
                 name,
                 key=f"open_{key}_{name}",
