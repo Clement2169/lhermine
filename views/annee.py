@@ -1,6 +1,7 @@
-"""Contenu commun des pages d'année (6 onglets)."""
+"""Contenu commun des pages d'année (5 onglets) et du journal des interventions."""
 
 from html import escape
+from io import StringIO
 from pathlib import Path
 
 import pandas as pd
@@ -91,31 +92,60 @@ def list_documents(directory: Path) -> list[str]:
 
 
 @st.cache_data
-def load_journal(path: str) -> pd.DataFrame:
-    """Charge le journal des interventions (UTF-8 puis repli CP1252)."""
+def load_csv(path: str) -> pd.DataFrame:
+    """Charge un CSV en texte (UTF-8 puis repli CP1252).
+
+    Le séparateur est celui qui revient le plus sur la ligne d'en-tête : Excel
+    en français exporte avec des points-virgules. Les colonnes sans en-tête
+    sont nommées d'après leur position (« Colonne 3 »).
+    """
+    raw = Path(path).read_bytes()
     try:
-        df = pd.read_csv(
-            path, encoding="utf-8-sig", dtype=str, keep_default_na=False
-        )
+        text = raw.decode("utf-8-sig")
     except UnicodeDecodeError:
-        df = pd.read_csv(
-            path, encoding="cp1252", dtype=str, keep_default_na=False
-        )
+        text = raw.decode("cp1252", errors="replace")
+    header = text.partition("\n")[0]
+    separator = max(",;\t", key=header.count)
+    df = pd.read_csv(
+        StringIO(text), sep=separator, dtype=str, keep_default_na=False
+    )
+    df.columns = [
+        f"Colonne {position}" if name.startswith("Unnamed:") else name
+        for position, name in enumerate(df.columns, start=1)
+    ]
+    return df.apply(lambda col: col.str.strip())
+
+
+def load_journal(path: str) -> pd.DataFrame:
+    """Charge le journal des interventions avec ses noms de colonnes."""
+    df = load_csv(path)
     df.columns = ["date", "objet", "demandeur", "intervenant", "commentaire"][
         : len(df.columns)
     ]
-    return df.apply(lambda col: col.str.strip() if col.dtype == object else col)
+    return df
 
 
 def show_document(path: Path) -> None:
-    """Affiche un PDF dans une zone défilante."""
+    """Affiche un PDF dans une zone défilante, ou un CSV sous forme de tableau."""
     st.subheader(path.name)
-    if path.suffix.lower() == ".pdf":
+    suffix = path.suffix.lower()
+    if suffix == ".pdf":
         st.pdf(path, height=800, key=f"pdf_{path}")
         st.html(
             PDF_ZOOM_SCRIPT.format(document=escape(str(path), quote=True)),
             unsafe_allow_javascript=True,
         )
+    elif suffix == ".csv":
+        try:
+            df = load_csv(str(path))
+        except (pd.errors.ParserError, pd.errors.EmptyDataError):
+            st.warning(
+                "Ce fichier CSV ne peut pas être affiché : il est vide ou mal "
+                "formé. Vous pouvez toujours le télécharger."
+            )
+            return
+        st.caption(f"{len(df)} lignes")
+        st.dataframe(df, width="stretch", hide_index=True, height=600)
     else:
         st.info("Aperçu indisponible pour ce type de fichier.")
 
@@ -165,88 +195,86 @@ def render_documents(directory: Path, key: str, columns: int = 2) -> None:
         show_document(directory / selected)
 
 
-def render_annee(annee: str, journal_filename: str) -> None:
-    """Affiche la page d'une année, par exemple ``render_annee("2026-27", ...)``."""
+def render_journal(annee: str, journal_filename: str) -> None:
+    """Affiche le journal des interventions d'une année."""
     journal_path = JOURNAUX_DIR / journal_filename
+    if not journal_path.is_file():
+        st.info(
+            "Aucun journal pour le moment : ajoutez "
+            f"{journal_filename} dans data/journaux/."
+        )
+    else:
+        df_journal = load_journal(str(journal_path))
+        st.caption(f"{len(df_journal)} interventions — {journal_path.name}")
+        st.download_button(
+            "Télécharger",
+            data=journal_path.read_bytes,
+            file_name=journal_path.name,
+            mime="text/csv",
+            key=f"download_journal_{annee}",
+            on_click="ignore",
+            icon=":material/download:",
+        )
+        st.dataframe(
+            df_journal,
+            use_container_width=True,
+            hide_index=True,
+            height=600,
+            column_config={
+                "date": st.column_config.TextColumn("Date", width="small"),
+                "objet": st.column_config.TextColumn("Objet", width="large"),
+                "demandeur": st.column_config.TextColumn(
+                    "Demandeur", width="medium"
+                ),
+                "intervenant": st.column_config.TextColumn(
+                    "Intervenant", width="medium"
+                ),
+                "commentaire": st.column_config.TextColumn(
+                    "Commentaire", width="medium"
+                ),
+            },
+        )
+
+
+def render_annee(annee: str) -> None:
+    """Affiche la page d'une année, par exemple ``render_annee("2026-27")``.
+
+    Le journal des interventions n'en fait pas partie : il a sa propre page,
+    en sous-menu de l'année (voir ``render_journal``).
+    """
+    st.title(f"Année {annee}")
+    render_onglets(annee)
+
+
+def render_onglets(annee: str) -> None:
+    """Affiche les 5 onglets de documents d'une année.
+
+    Utilisé par la page de l'année, ou par celle de son assemblée générale
+    quand les documents de l'année lui sont rattachés (2025-26 → AG-2026).
+    """
     # Les dossiers budget, dépenses et travaux utilisent l'année complète : 2026-2027.
     debut, fin = annee.split("-")
     annee_complete = f"{debut}-{debut[:2]}{fin}"
 
-    st.title(f"Année {annee}")
+    noms = ["Suivi du budget", "Dépenses courantes", "Travaux", "Résolutions", "Documents"]
+    tabs = dict(zip(noms, st.tabs(noms)))
 
-    (
-        tab_budget,
-        tab_depenses,
-        tab_travaux,
-        tab_resolutions,
-        tab_journal,
-        tab_docs,
-    ) = st.tabs(
-        [
-            "Suivi du budget",
-            "Dépenses courantes",
-            "Travaux",
-            "Résolutions",
-            "Journal des interventions",
-            "Documents",
-        ]
-    )
-
-    with tab_budget:
+    with tabs["Suivi du budget"]:
         st.subheader("Suivi du budget")
         render_documents(BUDGET_DIR / annee_complete, f"budget_{annee}")
 
-    with tab_depenses:
+    with tabs["Dépenses courantes"]:
         st.subheader("Dépenses courantes")
         render_documents(DEPENSES_DIR / annee_complete, f"depenses_{annee}")
 
-    with tab_travaux:
+    with tabs["Travaux"]:
         st.subheader("Travaux")
         render_documents(TRAVAUX_DIR / annee_complete, f"travaux_{annee}")
 
-    with tab_resolutions:
+    with tabs["Résolutions"]:
         st.subheader("Résolutions")
         render_documents(RESOLUTIONS_DIR / annee, f"resolutions_{annee}")
 
-    with tab_journal:
-        st.subheader("Journal des interventions")
-        if not journal_path.is_file():
-            st.info(
-                "Aucun journal pour le moment : ajoutez "
-                f"{journal_filename} dans data/journaux/."
-            )
-        else:
-            df_journal = load_journal(str(journal_path))
-            st.caption(f"{len(df_journal)} interventions — {journal_path.name}")
-            st.download_button(
-                "Télécharger",
-                data=journal_path.read_bytes,
-                file_name=journal_path.name,
-                mime="text/csv",
-                key=f"download_journal_{annee}",
-                on_click="ignore",
-                icon=":material/download:",
-            )
-            st.dataframe(
-                df_journal,
-                use_container_width=True,
-                hide_index=True,
-                height=600,
-                column_config={
-                    "date": st.column_config.TextColumn("Date", width="small"),
-                    "objet": st.column_config.TextColumn("Objet", width="large"),
-                    "demandeur": st.column_config.TextColumn(
-                        "Demandeur", width="medium"
-                    ),
-                    "intervenant": st.column_config.TextColumn(
-                        "Intervenant", width="medium"
-                    ),
-                    "commentaire": st.column_config.TextColumn(
-                        "Commentaire", width="medium"
-                    ),
-                },
-            )
-
-    with tab_docs:
+    with tabs["Documents"]:
         st.subheader("Documents")
         render_documents(DOCUMENTS_DIR / annee, f"documents_{annee}")
