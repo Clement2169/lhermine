@@ -2,4 +2,4 @@
 
 from views.ag import render_ag
 
-render_ag("2025-26", "AG2026")
+render_ag("2025-26", "AG-2026")

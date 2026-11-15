@@ -10,7 +10,7 @@ from views.annee import render_onglets
 
 
 def render_ag(annee: str, ag: str) -> None:
-    """Affiche la page d'une AG, par exemple ``render_ag("2025-26", "AG2026")``."""
-    st.title(f"Assemblée générale {ag[2:]}")
+    """Affiche la page d'une AG, par exemple ``render_ag("2025-26", "AG-2026")``."""
+    st.title(f"Assemblée générale {ag[3:]}")
     st.caption(f"Documents de l'exercice {annee}.")
-    render_onglets(annee)
+    render_onglets(annee, ag)

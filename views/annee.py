@@ -9,12 +9,9 @@ import streamlit as st
 
 PROJECT_DIR = Path(__file__).resolve().parent.parent
 DATA_DIR = PROJECT_DIR / "data"
-JOURNAUX_DIR = DATA_DIR / "journaux"
-DOCUMENTS_DIR = DATA_DIR / "documents"
-BUDGET_DIR = DATA_DIR / "budget"
-DEPENSES_DIR = DATA_DIR / "depenses"
-RESOLUTIONS_DIR = DATA_DIR / "resolutions"
-TRAVAUX_DIR = DATA_DIR / "travaux"
+
+# Organisation des données : data/<année>/journaux/ et
+# data/<année>/AG-<AAAA>/{budget,depenses,travaux,resolutions,documents}/.
 
 # Une liste de fichiers ne passe sur deux colonnes qu'au-delà de ce nombre.
 MAX_FILES_ONE_COLUMN = 5
@@ -197,11 +194,12 @@ def render_documents(directory: Path, key: str, columns: int = 2) -> None:
 
 def render_journal(annee: str, journal_filename: str) -> None:
     """Affiche le journal des interventions d'une année."""
-    journal_path = JOURNAUX_DIR / journal_filename
+    journaux_dir = DATA_DIR / annee / "journaux"
+    journal_path = journaux_dir / journal_filename
     if not journal_path.is_file():
         st.info(
             "Aucun journal pour le moment : ajoutez "
-            f"{journal_filename} dans data/journaux/."
+            f"{journal_filename} dans {journaux_dir.relative_to(PROJECT_DIR).as_posix()}/."
         )
     else:
         df_journal = load_journal(str(journal_path))
@@ -236,45 +234,14 @@ def render_journal(annee: str, journal_filename: str) -> None:
         )
 
 
-def render_annee(annee: str) -> None:
-    """Affiche la page d'une année, par exemple ``render_annee("2026-27")``.
-
-    Le journal des interventions n'en fait pas partie : il a sa propre page,
-    en sous-menu de l'année (voir ``render_journal``).
-    """
-    st.title(f"Année {annee}")
-    render_onglets(annee)
-
-
-def render_onglets(annee: str) -> None:
-    """Affiche les 5 onglets de documents d'une année.
-
-    Utilisé par la page de l'année, ou par celle de son assemblée générale
-    quand les documents de l'année lui sont rattachés (2025-26 → AG-2026).
-    """
-    # Les dossiers budget, dépenses et travaux utilisent l'année complète : 2026-2027.
-    debut, fin = annee.split("-")
-    annee_complete = f"{debut}-{debut[:2]}{fin}"
+def render_onglets(annee: str, ag: str) -> None:
+    """Affiche les 5 onglets de documents d'une AG, par exemple
+    ``render_onglets("2025-26", "AG-2026")`` (data/2025-26/AG-2026/)."""
+    base = DATA_DIR / annee / ag
 
     noms = ["Suivi du budget", "Dépenses courantes", "Travaux", "Résolutions", "Documents"]
-    tabs = dict(zip(noms, st.tabs(noms)))
-
-    with tabs["Suivi du budget"]:
-        st.subheader("Suivi du budget")
-        render_documents(BUDGET_DIR / annee_complete, f"budget_{annee}")
-
-    with tabs["Dépenses courantes"]:
-        st.subheader("Dépenses courantes")
-        render_documents(DEPENSES_DIR / annee_complete, f"depenses_{annee}")
-
-    with tabs["Travaux"]:
-        st.subheader("Travaux")
-        render_documents(TRAVAUX_DIR / annee_complete, f"travaux_{annee}")
-
-    with tabs["Résolutions"]:
-        st.subheader("Résolutions")
-        render_documents(RESOLUTIONS_DIR / annee, f"resolutions_{annee}")
-
-    with tabs["Documents"]:
-        st.subheader("Documents")
-        render_documents(DOCUMENTS_DIR / annee, f"documents_{annee}")
+    dossiers = ["budget", "depenses", "travaux", "resolutions", "documents"]
+    for nom, dossier, tab in zip(noms, dossiers, st.tabs(noms)):
+        with tab:
+            st.subheader(nom)
+            render_documents(base / dossier, f"{dossier}_{annee}")
