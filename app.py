@@ -20,7 +20,11 @@ def verifier_mot_de_passe() -> bool:
     try:
         attendu = st.secrets["password"]
     except (KeyError, FileNotFoundError):
-        st.error("Mot de passe non configuré : ajoutez `password` aux secrets.")
+        # Diagnostic temporaire : noms des clés vues (jamais les valeurs).
+        st.error(
+            "Mot de passe non configuré : ajoutez `password` aux secrets. "
+            f"Clés détectées : {list(st.secrets.keys())}"
+        )
         return False
 
     _, centre, _ = st.columns([2, 1, 2])
@@ -35,9 +39,6 @@ def verifier_mot_de_passe() -> bool:
         st.error("Mot de passe incorrect.")
     return False
 
-
-if not verifier_mot_de_passe():
-    st.stop()
 
 accueil = st.Page("views/accueil.py", title="Résidence l'Hermine", icon="🏠", default=True)
 annee_2025_26 = st.Page(
@@ -72,6 +73,11 @@ pg = st.navigation(
     pages=[page for parent, enfants in MENU for page in [parent, *enfants]],
     position="hidden",
 )
+
+# Navigation déclarée (et masquée) avant le blocage : sinon Streamlit affiche
+# son menu automatique pendant la saisie du mot de passe.
+if not verifier_mot_de_passe():
+    st.stop()
 
 with st.sidebar:
     st.html("<style>[class*='st-key-sous_menu_'] { padding-left: 1.5rem; }</style>")
