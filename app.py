@@ -1,5 +1,7 @@
 """Point d'entrée — navigation Résidence l'Hermine."""
 
+import hmac
+
 import streamlit as st
 
 st.set_page_config(
@@ -7,6 +9,35 @@ st.set_page_config(
     page_icon="🏠",
     layout="wide",
 )
+
+
+
+def verifier_mot_de_passe() -> bool:
+    """Bloque l'accès tant que le mot de passe partagé n'a pas été saisi."""
+    if st.session_state.get("authentifie"):
+        return True
+
+    try:
+        attendu = st.secrets["password"]
+    except (KeyError, FileNotFoundError):
+        st.error("Mot de passe non configuré : ajoutez `password` aux secrets.")
+        return False
+
+    _, centre, _ = st.columns([2, 1, 2])
+    with centre, st.form("connexion"):
+        saisi = st.text_input("Mot de passe", type="password")
+        valide = st.form_submit_button("Entrer")
+
+    if valide:
+        if hmac.compare_digest(saisi.encode(), str(attendu).encode()):
+            st.session_state["authentifie"] = True
+            st.rerun()
+        st.error("Mot de passe incorrect.")
+    return False
+
+
+if not verifier_mot_de_passe():
+    st.stop()
 
 accueil = st.Page("views/accueil.py", title="Résidence l'Hermine", icon="🏠", default=True)
 annee_2025_26 = st.Page(
